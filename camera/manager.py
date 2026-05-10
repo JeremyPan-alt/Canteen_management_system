@@ -10,6 +10,7 @@ from camera.base import BaseCamera, CameraConfig
 from camera.buffer import FrameSnapshot
 from camera.ffmpeg_camera import FFmpegCamera
 from camera.gstreamer_camera import GStreamerCamera
+from camera.opencv_camera import OpenCVCamera
 
 LOGGER = logging.getLogger(__name__)
 
@@ -26,6 +27,8 @@ class CameraManager:
     def _create_camera(config: CameraConfig) -> BaseCamera:
         if config.source_type in {"csi", "gstreamer"}:
             return GStreamerCamera(config)
+        if config.source_type in {"webcam", "local"}:
+            return OpenCVCamera(config)
         return FFmpegCamera(config)
 
     def start_all(self) -> None:

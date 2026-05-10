@@ -4,6 +4,7 @@ from camera.base import CameraConfig
 from camera.ffmpeg_camera import FFmpegCamera
 from camera.gstreamer_camera import GStreamerCamera
 from camera.manager import CameraManager
+from camera.opencv_camera import OpenCVCamera
 
 
 def test_webcam_auto_uses_first_windows_dshow_device():
@@ -37,6 +38,34 @@ def test_manager_uses_gstreamer_for_csi_camera():
     )
 
     assert isinstance(manager.get("entrance"), GStreamerCamera)
+
+
+def test_manager_uses_opencv_for_local_webcam():
+    manager = CameraManager.from_configs(
+        [
+            CameraConfig(
+                camera_id="entrance",
+                name="进货区实时画面",
+                source_type="webcam",
+                source="auto",
+            )
+        ]
+    )
+
+    assert isinstance(manager.get("entrance"), OpenCVCamera)
+
+
+def test_opencv_webcam_auto_maps_to_camera_index_zero():
+    camera = OpenCVCamera(
+        CameraConfig(
+            camera_id="entrance",
+            name="进货区实时画面",
+            source_type="webcam",
+            source="auto",
+        )
+    )
+
+    assert camera._resolve_source() == 0
 
 
 def test_gstreamer_csi_command_outputs_jpeg_to_stdout():

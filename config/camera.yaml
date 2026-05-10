@@ -12,8 +12,9 @@ cameras:
     name: 进货区实时画面
     source_type: webcam
     source_label: 电脑摄像头
-    # Windows: auto will enumerate the first DirectShow video device.
-    # Linux: auto maps to /dev/video0.
+    # Windows: auto opens camera index 0 through OpenCV DirectShow.
+    # Linux: auto opens camera index 0 through OpenCV V4L2.
+    # If your built-in camera is not index 0, try source: "1".
     source: auto
 
   - id: scale

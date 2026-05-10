@@ -10,7 +10,8 @@
   - `get_latest_frame()`
   - `reconnect()`
   - `capture_snapshot()`
-- 使用 FFmpeg 子进程读取 RTSP、Windows dshow、Linux v4l2、本机摄像头或测试源。
+- 使用 FFmpeg 子进程读取 RTSP、Linux v4l2 或测试源。
+- Windows/普通电脑本机摄像头使用 OpenCV 读取，避免 FFmpeg DirectShow 设备名匹配失败。
 - Jetson CSI 摄像头使用 GStreamer (`gst-launch-1.0`) 管线读取。
 - 每路摄像头独立采集线程，只保留最新帧，不堆积队列。
 - 任意一路摄像头异常时仅该路标记离线并自动重连，Flask 主进程和另一路视频不退出。
@@ -113,18 +114,18 @@ Windows 笔记本/USB 摄像头：
   name: 进货区实时画面
   source_type: webcam
   source_label: 电脑摄像头
-  # auto 会枚举并使用第一路 DirectShow 视频设备。
+  # auto 会通过 OpenCV DirectShow 打开摄像头索引 0。
   source: auto
 ```
 
-如果要指定 Windows 设备名：
+如果内置摄像头不是索引 0，可改成：
 
 ```yaml
 - id: entrance
   name: 进货区实时画面
   source_type: webcam
   source_label: 电脑摄像头
-  source: video=Integrated Camera
+  source: "1"
 ```
 
 Jetson CSI 摄像头：
