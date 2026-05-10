@@ -1,0 +1,22 @@
+defaults:
+  ffmpeg_path: ffmpeg
+  width: 640
+  height: 480
+  fps: 15
+  reconnect_interval_sec: 3
+  rtsp_transport: tcp
+
+cameras:
+  - id: entrance
+    name: 进货区实时画面
+    source_type: test
+    source_label: 测试视频源
+    input_format: lavfi
+    source: testsrc=size=640x480:rate=15
+
+  - id: scale
+    name: 秤面长焦摄像头
+    source_type: test
+    source_label: 测试视频源
+    input_format: lavfi
+    source: smptebars=size=640x480:rate=15

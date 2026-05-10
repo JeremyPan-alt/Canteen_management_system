@@ -36,7 +36,7 @@ import CameraPanel from './components/CameraPanel.vue'
 
 const apiBase = import.meta.env.VITE_API_BASE || ''
 const cameras = [
-  { id: 'entrance', name: '进货区摄像头' },
+  { id: 'entrance', name: '进货区实时画面' },
   { id: 'scale', name: '秤面长焦摄像头' },
 ]
 
@@ -66,6 +66,7 @@ async function refreshStatus() {
         camera_id: camera.id,
         name: camera.name,
         online: false,
+        source_label: '未知视频源',
         last_error: String(error),
       }
     }

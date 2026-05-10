@@ -22,7 +22,7 @@ def load_camera_configs(path: str | os.PathLike[str]) -> list[CameraConfig]:
     for item in cameras:
         merged = {**defaults, **item}
         merged["camera_id"] = str(merged.pop("id"))
-        merged["source"] = str(merged["source"])
+        merged["source"] = str(merged.get("source", ""))
         merged["extra_input_args"] = tuple(merged.get("extra_input_args") or ())
         merged["extra_output_args"] = tuple(merged.get("extra_output_args") or ())
         result.append(CameraConfig(**merged))

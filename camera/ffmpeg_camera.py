@@ -8,6 +8,8 @@ camera cannot stop the rest of the application.
 from __future__ import annotations
 
 import logging
+import platform
+import re
 import subprocess
 import threading
 import time
@@ -69,6 +71,8 @@ class FFmpegCamera(BaseCamera):
         return CameraStatus(
             camera_id=self.config.camera_id,
             name=self.config.name,
+            source_type=self.config.source_type,
+            source_label=self.config.display_source(),
             online=online,
             running=bool(self._thread and self._thread.is_alive()),
             last_frame_at=latest.timestamp if latest else None,
@@ -90,7 +94,7 @@ class FFmpegCamera(BaseCamera):
 
     def _run_ffmpeg_until_failure(self) -> None:
         command = self._build_command()
-        LOGGER.info("Starting camera %s with FFmpeg", self.config.camera_id)
+        LOGGER.info("Starting camera %s with %s", self.config.camera_id, self._backend_name())
         self._process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
@@ -115,14 +119,16 @@ class FFmpegCamera(BaseCamera):
         cfg = self.config
         command = [cfg.ffmpeg_path, "-hide_banner", "-loglevel", "error"]
 
+        input_format, source = self._resolve_input()
+
         if cfg.source_type == "rtsp":
             command.extend(["-rtsp_transport", cfg.rtsp_transport])
 
-        if cfg.input_format:
-            command.extend(["-f", cfg.input_format])
+        if input_format:
+            command.extend(["-f", input_format])
 
         command.extend(cfg.extra_input_args)
-        command.extend(["-i", cfg.source])
+        command.extend(["-i", source])
 
         video_filter = f"fps={cfg.fps},scale={cfg.width}:{cfg.height}"
         command.extend(
@@ -141,6 +147,65 @@ class FFmpegCamera(BaseCamera):
         command.extend(cfg.extra_output_args)
         command.append("pipe:1")
         return command
+
+    def _backend_name(self) -> str:
+        return "FFmpeg"
+
+    def _resolve_input(self) -> tuple[Optional[str], str]:
+        cfg = self.config
+        if cfg.source_type in {"webcam", "local"}:
+            return self._resolve_local_webcam()
+        return cfg.input_format, cfg.source
+
+    def _resolve_local_webcam(self) -> tuple[str, str]:
+        cfg = self.config
+        system_name = platform.system().lower()
+        requested_source = cfg.source.strip()
+        auto_source = requested_source in {"", "auto", "default"}
+
+        if system_name == "windows":
+            source = self._detect_windows_dshow_source() if auto_source else requested_source
+            if not source.startswith("video="):
+                source = f"video={source}"
+            return "dshow", source
+
+        if system_name == "darwin":
+            return "avfoundation", "0" if auto_source else requested_source
+
+        return "v4l2", "/dev/video0" if auto_source else requested_source
+
+    def _detect_windows_dshow_source(self) -> str:
+        command = [
+            self.config.ffmpeg_path,
+            "-hide_banner",
+            "-list_devices",
+            "true",
+            "-f",
+            "dshow",
+            "-i",
+            "dummy",
+        ]
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+        output = "\n".join([completed.stdout, completed.stderr])
+        in_video_section = False
+        for line in output.splitlines():
+            if "DirectShow video devices" in line:
+                in_video_section = True
+                continue
+            if "DirectShow audio devices" in line:
+                in_video_section = False
+            if not in_video_section:
+                continue
+            match = re.search(r'"([^"]+)"', line)
+            if match and not match.group(1).startswith("@"):
+                return f"video={match.group(1)}"
+        raise RuntimeError("No DirectShow video device detected")
 
     @staticmethod
     def _extract_jpeg_frames(pending: bytearray) -> list[bytes]:

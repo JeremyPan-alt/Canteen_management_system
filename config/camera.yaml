@@ -1,5 +1,6 @@
 defaults:
   ffmpeg_path: ffmpeg
+  gstreamer_path: gst-launch-1.0
   width: 640
   height: 480
   fps: 15
@@ -8,28 +9,17 @@ defaults:
 
 cameras:
   - id: entrance
-    name: 进货区摄像头
-    # Production RTSP example:
-    # source_type: rtsp
-    # source: rtsp://user:password@192.168.1.10:554/stream1
-    #
-    # Development default uses FFmpeg's test source so the UI can run without
-    # physical cameras. Replace source/source_type/input_format for real inputs.
-    source_type: test
-    input_format: lavfi
-    source: testsrc=size=640x480:rate=15
+    name: 进货区实时画面
+    source_type: webcam
+    source_label: 电脑摄像头
+    # Windows: auto will enumerate the first DirectShow video device.
+    # Linux: auto maps to /dev/video0.
+    source: auto
 
   - id: scale
     name: 秤面长焦摄像头
-    # Windows USB camera example:
-    # source_type: device
-    # input_format: dshow
-    # source: video=USB Camera
-    #
-    # Jetson/Linux USB camera example:
-    # source_type: device
-    # input_format: v4l2
-    # source: /dev/video0
-    source_type: test
-    input_format: lavfi
-    source: smptebars=size=640x480:rate=15
+    source_type: rtsp
+    source_label: RTSP
+    # Replace this with the real scale camera stream. If it is not available,
+    # the frontend keeps the panel black and shows "视频流读取异常请检查".
+    source: rtsp://127.0.0.1:8554/scale

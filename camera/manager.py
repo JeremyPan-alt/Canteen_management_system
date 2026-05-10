@@ -9,6 +9,7 @@ from typing import Iterable, Optional
 from camera.base import BaseCamera, CameraConfig
 from camera.buffer import FrameSnapshot
 from camera.ffmpeg_camera import FFmpegCamera
+from camera.gstreamer_camera import GStreamerCamera
 
 LOGGER = logging.getLogger(__name__)
 
@@ -19,7 +20,13 @@ class CameraManager:
 
     @classmethod
     def from_configs(cls, configs: Iterable[CameraConfig]) -> "CameraManager":
-        return cls(FFmpegCamera(config) for config in configs)
+        return cls(cls._create_camera(config) for config in configs)
+
+    @staticmethod
+    def _create_camera(config: CameraConfig) -> BaseCamera:
+        if config.source_type in {"csi", "gstreamer"}:
+            return GStreamerCamera(config)
+        return FFmpegCamera(config)
 
     def start_all(self) -> None:
         for camera in self._cameras.values():
