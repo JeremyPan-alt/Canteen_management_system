@@ -31,12 +31,13 @@ def camera_status() -> Response:
 
 @frame_api.get("/cameras/<camera_id>/stream")
 def camera_stream(camera_id: str) -> Response:
-    camera = _camera_manager().get(camera_id)
+    camera_manager = _camera_manager()
+    camera = camera_manager.get(camera_id)
     if camera is None:
         return jsonify({"error": f"Unknown camera: {camera_id}"}), 404
 
     return Response(
-        _mjpeg_frames(camera_id),
+        _mjpeg_frames(camera_manager, camera_id),
         mimetype="multipart/x-mixed-replace; boundary=frame",
         headers={"Cache-Control": "no-store"},
     )
@@ -69,10 +70,10 @@ def list_captures() -> Response:
     return jsonify({"batches": [asdict(batch) for batch in batches]})
 
 
-def _mjpeg_frames(camera_id: str) -> Iterator[bytes]:
+def _mjpeg_frames(camera_manager, camera_id: str) -> Iterator[bytes]:
     last_timestamp = 0.0
     while True:
-        snapshot = _camera_manager().get_latest_frame(camera_id)
+        snapshot = camera_manager.get_latest_frame(camera_id)
         if snapshot is None or snapshot.timestamp == last_timestamp:
             time.sleep(0.05)
             continue
