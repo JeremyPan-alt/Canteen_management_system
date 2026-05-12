@@ -1,0 +1,26 @@
+defaults:
+  ffmpeg_path: ffmpeg
+  gstreamer_path: gst-launch-1.0
+  width: 640
+  height: 480
+  fps: 15
+  reconnect_interval_sec: 3
+  rtsp_transport: tcp
+
+cameras:
+  - id: entrance
+    name: 进货区实时画面
+    source_type: webcam
+    source_label: 电脑摄像头
+    # Windows: auto opens camera index 0 through OpenCV DirectShow.
+    # Linux: auto opens camera index 0 through OpenCV V4L2.
+    # If your built-in camera is not index 0, try source: "1".
+    source: auto
+
+  - id: scale
+    name: 秤面长焦摄像头
+    source_type: rtsp
+    source_label: RTSP
+    # Replace this with the real scale camera stream. If it is not available,
+    # the frontend keeps the panel black and shows "视频流读取异常请检查".
+    source: rtsp://127.0.0.1:8554/scale

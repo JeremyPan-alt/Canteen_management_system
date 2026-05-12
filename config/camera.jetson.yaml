@@ -1,0 +1,29 @@
+defaults:
+  gstreamer_path: gst-launch-1.0
+  width: 1280
+  height: 720
+  fps: 30
+  reconnect_interval_sec: 3
+
+cameras:
+  - id: entrance
+    name: 进货区实时画面
+    source_type: csi
+    source_label: CSI
+    # nvarguscamerasrc sensor-id. Use 0 for the first CSI camera.
+    source: "0"
+
+  - id: scale
+    name: 秤面长焦摄像头
+    source_type: csi
+    source_label: CSI
+    # If the Jetson has only one CSI camera, this second source will stay
+    # offline and the frontend will show "视频流读取异常请检查".
+    source: "1"
+
+    # Optional custom GStreamer pipeline. If set, it replaces the generated
+    # nvarguscamerasrc pipeline and must output JPEG bytes to stdout via fdsink.
+    # gstreamer_pipeline: >
+    #   nvarguscamerasrc sensor-id=1 !
+    #   video/x-raw(memory:NVMM),width=1280,height=720,framerate=30/1 !
+    #   nvvidconv ! video/x-raw,format=I420 ! jpegenc ! fdsink fd=1
