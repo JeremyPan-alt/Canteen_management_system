@@ -12,6 +12,7 @@ from camera.buffer import FrameSnapshot
 from camera.ffmpeg_camera import FFmpegCamera
 from camera.gstreamer_camera import GStreamerCamera
 from camera.opencv_camera import OpenCVCamera
+from camera.shared_camera import SharedCamera
 
 LOGGER = logging.getLogger(__name__)
 
@@ -93,12 +94,48 @@ class CameraManager:
                 extra_input_args=(),
                 extra_output_args=(),
             )
-            new_camera = self._create_camera(new_config)
+            shared_provider_id = self._find_shared_webcam_provider(camera_id, source_type, source)
+            if shared_provider_id:
+                new_camera = SharedCamera(new_config, shared_provider_id, self.get)
+            else:
+                new_camera = self._create_camera(new_config)
             self._cameras[camera_id] = new_camera
 
         old_camera.stop()
         new_camera.start()
         return asdict(new_camera.get_status())
+
+    def active_webcam_sources(self) -> list[str]:
+        with self._lock:
+            configs = [camera.config for camera in self._cameras.values()]
+        sources: list[str] = []
+        for config in configs:
+            if config.source_type in {"webcam", "local"}:
+                normalized = self._normalize_webcam_source(config.source)
+                if normalized not in sources:
+                    sources.append(normalized)
+        return sources
+
+    def _find_shared_webcam_provider(self, camera_id: str, source_type: str, source: str) -> Optional[str]:
+        if source_type not in {"webcam", "local"}:
+            return None
+        normalized = self._normalize_webcam_source(source)
+        for other_id, camera in self._cameras.items():
+            if other_id == camera_id:
+                continue
+            config = camera.config
+            if config.source_type not in {"webcam", "local"}:
+                continue
+            if self._normalize_webcam_source(config.source) == normalized:
+                return other_id
+        return None
+
+    @staticmethod
+    def _normalize_webcam_source(source: str) -> str:
+        source = str(source or "").strip()
+        if source in {"", "auto", "default"}:
+            return "0"
+        return source
 
     def get_latest_frame(self, camera_id: str) -> Optional[FrameSnapshot]:
         camera = self.get(camera_id)

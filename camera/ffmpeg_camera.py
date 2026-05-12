@@ -84,8 +84,11 @@ class FFmpegCamera(BaseCamera):
             try:
                 self._run_ffmpeg_until_failure()
             except Exception as exc:  # noqa: BLE001 - camera loops must survive.
+                if self._stop_event.is_set():
+                    break
                 self._mark_offline(str(exc))
-                LOGGER.exception("Camera %s capture failed", self.config.camera_id)
+                LOGGER.warning("Camera %s capture failed: %s", self.config.camera_id, exc)
+                LOGGER.debug("Camera %s capture traceback", self.config.camera_id, exc_info=True)
             finally:
                 self._terminate_process()
 

@@ -36,6 +36,9 @@ class FakeCameraManager:
     def get_config(self, camera_id):
         return self.config if camera_id == "entrance" else None
 
+    def active_webcam_sources(self):
+        return ["0"]
+
     def update_camera_source(self, camera_id, *, source_type, source, source_label=None):
         self.config = CameraConfig(
             camera_id=camera_id,

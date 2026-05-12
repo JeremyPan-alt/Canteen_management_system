@@ -34,8 +34,9 @@ def camera_status() -> Response:
 @frame_api.get("/video-sources")
 def video_sources() -> Response:
     camera_id = request.args.get("camera_id") or "entrance"
-    options = discover_video_sources()
-    current_config = _camera_manager().get_config(camera_id)
+    camera_manager = _camera_manager()
+    options = discover_video_sources(active_webcam_sources=camera_manager.active_webcam_sources())
+    current_config = camera_manager.get_config(camera_id)
     if current_config is not None and current_config.source_type == "webcam":
         current_source = current_config.source if current_config.source else "auto"
         if current_source in {"auto", "default"}:

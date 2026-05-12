@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import platform
+import subprocess
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 
 @dataclass(frozen=True)
@@ -19,10 +21,21 @@ class VideoSourceOption:
     description: Optional[str] = None
 
 
-def discover_video_sources(max_index: int = 6) -> list[VideoSourceOption]:
+_CACHE_TTL_SEC = 30.0
+_cached_at = 0.0
+_cached_options: list[VideoSourceOption] = []
+
+
+def discover_video_sources(
+    max_index: int = 6,
+    active_webcam_sources: Optional[Iterable[str]] = None,
+) -> list[VideoSourceOption]:
     """Return local camera choices plus an RTSP placeholder option."""
 
-    options = _discover_local_webcams(max_index=max_index)
+    active_options = _active_webcam_options(active_webcam_sources or [])
+    # Probing webcams can interrupt an active Windows camera. If a local camera
+    # is already streaming, expose that known-good source and defer deeper scans.
+    options = active_options or _cached_or_discover_local_webcams(max_index=max_index)
     if not options:
         options.append(
             VideoSourceOption(
@@ -50,11 +63,40 @@ def discover_video_sources(max_index: int = 6) -> list[VideoSourceOption]:
     return options
 
 
+def _active_webcam_options(active_webcam_sources: Iterable[str]) -> list[VideoSourceOption]:
+    options = []
+    for source in _unique_sources(active_webcam_sources):
+        index = _normalize_webcam_source(source)
+        options.append(
+            VideoSourceOption(
+                id=f"webcam-{index}",
+                label=f"电脑摄像头 {index}",
+                source_type="webcam",
+                source=index,
+                source_label="电脑摄像头",
+                description="当前已连接并正在使用的本机摄像头",
+            )
+        )
+    return options
+
+
+def _cached_or_discover_local_webcams(max_index: int) -> list[VideoSourceOption]:
+    global _cached_at, _cached_options
+    now = time.monotonic()
+    if _cached_options and now - _cached_at < _CACHE_TTL_SEC:
+        return list(_cached_options)
+
+    _cached_options = _discover_local_webcams(max_index=max_index)
+    _cached_at = now
+    return list(_cached_options)
+
+
 def _discover_local_webcams(max_index: int) -> list[VideoSourceOption]:
     cv2 = _try_import_cv2()
     if cv2 is None:
         return []
 
+    windows_names = _windows_camera_device_names()
     api_preference = _api_preference(cv2)
     options: list[VideoSourceOption] = []
     for index in range(max_index):
@@ -65,10 +107,11 @@ def _discover_local_webcams(max_index: int) -> list[VideoSourceOption]:
             ok, _ = capture.read()
             if not ok:
                 continue
+            label = windows_names[len(options)] if len(options) < len(windows_names) else _camera_label(index)
             options.append(
                 VideoSourceOption(
                     id=f"webcam-{index}",
-                    label=_camera_label(index),
+                    label=label,
                     source_type="webcam",
                     source=str(index),
                     source_label="电脑摄像头",
@@ -77,7 +120,41 @@ def _discover_local_webcams(max_index: int) -> list[VideoSourceOption]:
             )
         finally:
             capture.release()
-    return options
+
+    if windows_names and len(options) > len(windows_names):
+        options = options[: len(windows_names)]
+    return _dedupe_options(options)
+
+
+def _dedupe_options(options: list[VideoSourceOption]) -> list[VideoSourceOption]:
+    seen: set[str] = set()
+    result: list[VideoSourceOption] = []
+    for option in options:
+        key = option.label.strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(option)
+    return result
+
+
+def _unique_sources(sources: Iterable[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for source in sources:
+        normalized = _normalize_webcam_source(source)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return result
+
+
+def _normalize_webcam_source(source: str) -> str:
+    source = str(source or "").strip()
+    if source in {"", "auto", "default"}:
+        return "0"
+    return source
 
 
 def _camera_label(index: int) -> str:
@@ -94,6 +171,39 @@ def _camera_description(index: int) -> str:
     if system_name == "linux":
         return f"OpenCV V4L2 摄像头索引 {index}"
     return f"OpenCV 摄像头索引 {index}"
+
+
+def _windows_camera_device_names() -> list[str]:
+    if platform.system().lower() != "windows":
+        return []
+
+    command = [
+        "powershell",
+        "-NoProfile",
+        "-Command",
+        (
+            "Get-CimInstance Win32_PnPEntity | "
+            "Where-Object { $_.PNPClass -in @('Camera','Image') } | "
+            "Select-Object -ExpandProperty Name"
+        ),
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception:
+        return []
+
+    names = []
+    for line in completed.stdout.splitlines():
+        name = line.strip()
+        if name and name not in names:
+            names.append(name)
+    return names
 
 
 def _api_preference(cv2) -> int:

@@ -79,8 +79,11 @@ class OpenCVCamera(BaseCamera):
             try:
                 self._run_opencv_until_failure()
             except Exception as exc:  # noqa: BLE001 - camera loops must survive.
+                if self._stop_event.is_set():
+                    break
                 self._mark_offline(str(exc))
-                LOGGER.exception("OpenCV camera %s capture failed", self.config.camera_id)
+                LOGGER.warning("OpenCV camera %s capture failed: %s", self.config.camera_id, exc)
+                LOGGER.debug("OpenCV camera %s capture traceback", self.config.camera_id, exc_info=True)
             finally:
                 self._release_capture()
 
