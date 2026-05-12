@@ -8,6 +8,8 @@ from typing import Iterator
 
 from flask import Blueprint, Response, current_app, jsonify, request
 
+from camera.source_discovery import VideoSourceOption, discover_video_sources, serialize_options
+
 frame_api = Blueprint("frame_api", __name__, url_prefix="/api")
 
 
@@ -27,6 +29,54 @@ def health() -> Response:
 @frame_api.get("/cameras/status")
 def camera_status() -> Response:
     return jsonify({"cameras": _camera_manager().statuses()})
+
+
+@frame_api.get("/video-sources")
+def video_sources() -> Response:
+    camera_id = request.args.get("camera_id") or "entrance"
+    options = discover_video_sources()
+    current_config = _camera_manager().get_config(camera_id)
+    if current_config is not None and current_config.source_type == "webcam":
+        current_source = current_config.source if current_config.source else "auto"
+        if current_source in {"auto", "default"}:
+            current_source = "0"
+        if all(option.source != current_source for option in options if option.source_type == "webcam"):
+            options.insert(
+                0,
+                VideoSourceOption(
+                    id=f"webcam-{current_source}",
+                    label=f"当前电脑摄像头 {current_source}",
+                    source_type="webcam",
+                    source=current_source,
+                    source_label="电脑摄像头",
+                    available=True,
+                    description="当前正在使用的本机摄像头",
+                ),
+            )
+    return jsonify({"sources": serialize_options(options)})
+
+
+@frame_api.post("/cameras/<camera_id>/source")
+def update_camera_source(camera_id: str) -> Response:
+    payload = request.get_json(silent=True) or {}
+    source_type = str(payload.get("source_type") or "").strip()
+    source = str(payload.get("source") or "").strip()
+
+    if source_type not in {"webcam", "rtsp"}:
+        return jsonify({"error": "source_type must be one of: webcam, rtsp"}), 400
+    if source_type == "rtsp" and not source.lower().startswith("rtsp://"):
+        return jsonify({"error": "RTSP source must start with rtsp://"}), 400
+    if source_type == "webcam" and not source:
+        source = "0"
+
+    source_label = str(payload.get("source_label") or "").strip() or None
+    status = _camera_manager().update_camera_source(
+        camera_id,
+        source_type=source_type,
+        source=source,
+        source_label=source_label,
+    )
+    return jsonify({"camera": status})
 
 
 @frame_api.get("/cameras/<camera_id>/stream")

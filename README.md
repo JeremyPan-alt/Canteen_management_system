@@ -18,6 +18,8 @@
 - Flask API 提供：
   - `GET /api/cameras/status`
   - `GET /api/cameras/<camera_id>/stream`
+- `GET /api/video-sources?camera_id=entrance`
+- `POST /api/cameras/<camera_id>/source`
   - `POST /api/capture/start`
   - `GET /api/capture/<batch_id>`
 - Vue 前端固定显示左右两块黑色视频区域，离线时居中显示“视频流读取异常请检查”，并用红绿小点显示在线/离线和视频来源。
@@ -93,6 +95,41 @@ VITE_API_BASE=http://localhost:5000 npm --prefix frontend run dev
 ```bash
 npm --prefix frontend run build
 python app.py
+```
+
+## 前端切换视频源
+
+在页面左侧卡片中点击 `进货区实时画面` 标题，可以打开视频源下拉框：
+
+- Windows / Linux 本机摄像头会由后端用 OpenCV 自动探测，并以 `电脑摄像头 0`、`电脑摄像头 1` 等形式展示。
+- 下拉框中始终包含 `RTSP 视频流`，选择后会弹出输入框，填写 `rtsp://...` 地址后立即切换并重连该路摄像头。
+- 切换接口只替换对应摄像头采集线程，不会影响另一侧摄像头或 Flask 主进程。
+
+相关接口：
+
+```http
+GET /api/video-sources?camera_id=entrance
+POST /api/cameras/entrance/source
+```
+
+本机摄像头切换请求：
+
+```json
+{
+  "source_type": "webcam",
+  "source": "0",
+  "source_label": "电脑摄像头"
+}
+```
+
+RTSP 切换请求：
+
+```json
+{
+  "source_type": "rtsp",
+  "source": "rtsp://user:password@192.168.1.10:554/stream1",
+  "source_label": "RTSP"
+}
 ```
 
 ## 摄像头配置示例

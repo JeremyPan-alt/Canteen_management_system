@@ -17,6 +17,11 @@
         :camera="camera"
         :status="statusById[camera.id]"
         :stream-url="`${apiBase}/api/cameras/${camera.id}/stream`"
+        :selectable="camera.id === 'entrance'"
+        :source-options="sourceOptionsById[camera.id] || []"
+        :source-loading="Boolean(sourceLoadingById[camera.id])"
+        @request-sources="loadVideoSources"
+        @select-source="handleSourceSelection"
       />
     </section>
 
@@ -41,6 +46,8 @@ const cameras = [
 ]
 
 const statusById = reactive({})
+const sourceOptionsById = reactive({})
+const sourceLoadingById = reactive({})
 const capturing = ref(false)
 const lastBatch = ref(null)
 let pollTimer = null
@@ -90,6 +97,45 @@ async function startCapture() {
   } finally {
     capturing.value = false
   }
+}
+
+async function loadVideoSources(cameraId) {
+  sourceLoadingById[cameraId] = true
+  try {
+    const response = await fetch(
+      `${apiBase}/api/video-sources?camera_id=${encodeURIComponent(cameraId)}`,
+      { cache: 'no-store' },
+    )
+    const payload = await response.json()
+    sourceOptionsById[cameraId] = payload.sources || []
+  } finally {
+    sourceLoadingById[cameraId] = false
+  }
+}
+
+async function handleSourceSelection(cameraId, option) {
+  let source = option.source
+  if (option.source_type === 'rtsp') {
+    source = window.prompt('请输入 RTSP 视频流地址', 'rtsp://')
+    if (!source) return
+  }
+
+  const response = await fetch(`${apiBase}/api/cameras/${cameraId}/source`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      source_type: option.source_type,
+      source,
+      source_label: option.source_label,
+    }),
+  })
+  const payload = await response.json()
+  if (!response.ok) {
+    window.alert(payload.error || '切换视频源失败')
+    return
+  }
+  statusById[cameraId] = payload.camera
+  await refreshStatus()
 }
 
 function watchBatch(batchId) {
