@@ -17,7 +17,7 @@
         :camera="camera"
         :status="statusById[camera.id]"
         :stream-url="`${apiBase}/api/cameras/${camera.id}/stream`"
-        :selectable="camera.id === 'entrance'"
+        selectable
         :source-options="sourceOptionsById[camera.id] || []"
         :source-loading="Boolean(sourceLoadingById[camera.id])"
         @request-sources="loadVideoSources"

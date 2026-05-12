@@ -15,7 +15,7 @@
             @click="toggleSourceMenu"
           >
             {{ displayName }}
-            <span v-if="selectable" class="chevron">▾</span>
+            <span v-if="selectable" class="chevron">▴</span>
           </button>
           <div v-if="selectable && menuOpen" class="source-menu">
             <button
