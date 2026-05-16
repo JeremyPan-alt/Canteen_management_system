@@ -40,6 +40,55 @@ class FakeCameraManager:
         return ["0"]
 
     def update_camera_source(self, camera_id, *, source_type, source, source_label=None):
+        return {
+            "camera_id": camera_id,
+            "name": "进货区实时画面",
+            "source_type": source_type,
+            "source_label": source_label or "电脑摄像头",
+            "online": False,
+            "running": True,
+            "last_frame_at": None,
+            "last_error": None,
+        }
+
+
+class FakeDetectionService:
+    def available_models(self):
+        return {
+            "detection_models": [{"id": "yolov11", "name": "YOLOv11"}],
+            "ocr_models": [{"id": "paddleocr", "name": "PaddleOCR"}],
+        }
+
+
+class FakeDatabaseService:
+    def __init__(self):
+        self.records = []
+
+    def insert_local_record(self, payload):
+        record = {"id": 1, **payload}
+        self.records.append(record)
+        return record
+
+    def list_session_records(self, pending_only=True):
+        return self.records
+
+    def upload_session_pending_to_mysql(self):
+        self.records = []
+        return {"uploaded": 1, "message": "数据已入库，本地数据库暂无待上传数据"}
+
+    def list_mysql_records(self, intake_date):
+        return {"configured": True, "records": []}
+
+
+def make_app():
+    app = Flask(__name__)
+    app.config["camera_manager"] = FakeCameraManager()
+    app.config["detection_service"] = FakeDetectionService()
+    app.config["database_service"] = FakeDatabaseService()
+    app.register_blueprint(frame_api)
+    return app
+
+    def update_camera_source(self, camera_id, *, source_type, source, source_label=None):
         self.config = CameraConfig(
             camera_id=camera_id,
             name="进货区实时画面",
@@ -60,9 +109,7 @@ class FakeCameraManager:
 
 
 def test_mjpeg_stream_does_not_require_app_context_during_iteration():
-    app = Flask(__name__)
-    app.config["camera_manager"] = FakeCameraManager()
-    app.register_blueprint(frame_api)
+    app = make_app()
 
     with app.test_request_context("/api/cameras/entrance/stream"):
         response = app.view_functions["frame_api.camera_stream"]("entrance")
@@ -75,9 +122,7 @@ def test_mjpeg_stream_does_not_require_app_context_during_iteration():
 
 
 def test_video_sources_returns_discovered_webcams_and_rtsp_option():
-    app = Flask(__name__)
-    app.config["camera_manager"] = FakeCameraManager()
-    app.register_blueprint(frame_api)
+    app = make_app()
 
     with patch(
         "api.frame_api.discover_video_sources",
@@ -107,9 +152,7 @@ def test_video_sources_returns_discovered_webcams_and_rtsp_option():
 
 
 def test_update_camera_source_rejects_invalid_rtsp_url():
-    app = Flask(__name__)
-    app.config["camera_manager"] = FakeCameraManager()
-    app.register_blueprint(frame_api)
+    app = make_app()
 
     response = app.test_client().post(
         "/api/cameras/entrance/source",
@@ -120,9 +163,7 @@ def test_update_camera_source_rejects_invalid_rtsp_url():
 
 
 def test_update_camera_source_accepts_webcam_index():
-    app = Flask(__name__)
-    app.config["camera_manager"] = FakeCameraManager()
-    app.register_blueprint(frame_api)
+    app = make_app()
 
     response = app.test_client().post(
         "/api/cameras/entrance/source",
@@ -132,3 +173,22 @@ def test_update_camera_source_accepts_webcam_index():
     payload = response.get_json()
     assert response.status_code == 200
     assert payload["camera"]["source_type"] == "webcam"
+
+
+def test_models_endpoint_returns_model_options():
+    response = make_app().test_client().get("/api/models")
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["detection_models"][0]["id"] == "yolov11"
+
+
+def test_local_record_endpoint_saves_confirmed_record():
+    response = make_app().test_client().post(
+        "/api/records/local",
+        json={"product_name": "土豆", "weight": 2.5},
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 201
+    assert payload["record"]["product_name"] == "土豆"

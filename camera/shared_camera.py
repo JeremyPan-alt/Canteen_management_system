@@ -18,9 +18,9 @@ class SharedCamera(BaseCamera):
         self._provider_getter = provider_getter
 
     def start(self) -> None:
-        provider = self._provider()
-        if provider:
-            provider.start()
+        # The provider camera owns the physical capture thread. A shared view
+        # should never open the same device a second time.
+        return None
 
     def stop(self) -> None:
         # The owner camera controls the physical device lifecycle.

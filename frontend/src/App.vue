@@ -5,10 +5,29 @@
         <p class="eyebrow">Canteen Intake Capture</p>
         <h1>食材进货自动录入</h1>
       </div>
-      <button class="primary" :disabled="capturing" @click="startCapture">
-        {{ capturing ? '录入中...' : '开始录入' }}
-      </button>
     </header>
+
+    <section class="model-toolbar">
+      <label>
+        <span>目标检测模型</span>
+        <select v-model="selectedDetectionModel">
+          <option v-for="model in detectionModels" :key="model.id" :value="model.id">
+            {{ model.name }}
+          </option>
+        </select>
+      </label>
+      <label>
+        <span>OCR 模型</span>
+        <select v-model="selectedOcrModel">
+          <option v-for="model in ocrModels" :key="model.id" :value="model.id">
+            {{ model.name }}
+          </option>
+        </select>
+      </label>
+      <button class="primary" :disabled="capturing" @click="startCapture">
+        {{ capturing ? '检测中...' : '开始录入' }}
+      </button>
+    </section>
 
     <section class="camera-grid">
       <CameraPanel
@@ -25,13 +44,105 @@
       />
     </section>
 
-    <section class="result-card">
-      <div class="result-header">
-        <h2>最近录入批次</h2>
-        <span v-if="lastBatch" class="pill">{{ lastBatch.status }}</span>
-      </div>
-      <pre>{{ formattedBatch }}</pre>
+    <section class="data-grid">
+      <article class="result-card">
+        <div class="result-header">
+          <h2>本次待上传 SQLite 数据</h2>
+          <button class="secondary" :disabled="!localRecords.length" @click="uploadLocalRecords">
+            数据入库
+          </button>
+        </div>
+        <p v-if="localMessage && !localRecords.length" class="empty-text">{{ localMessage }}</p>
+        <div v-else class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>菜品</th>
+                <th>重量</th>
+                <th>记录人</th>
+                <th>入库时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="record in localRecords" :key="record.id">
+                <td>{{ record.product_name || '待补充' }}</td>
+                <td>{{ record.weight ?? '-' }} {{ record.unit }}</td>
+                <td>{{ record.recorder }}</td>
+                <td>{{ record.intake_datetime }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="result-card">
+        <div class="result-header">
+          <h2>MySQL 已有数据</h2>
+          <input v-model="mysqlDate" type="date" @change="loadMysqlRecords" />
+        </div>
+        <p v-if="mysqlMessage && !mysqlRecords.length" class="empty-text">{{ mysqlMessage }}</p>
+        <div v-else class="table-wrap scroll-table">
+          <table>
+            <thead>
+              <tr>
+                <th>菜品</th>
+                <th>重量</th>
+                <th>记录人</th>
+                <th>入库时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="record in mysqlRecords" :key="record.id">
+                <td>{{ record.product_name }}</td>
+                <td>{{ record.weight ?? '-' }} {{ record.unit }}</td>
+                <td>{{ record.recorder }}</td>
+                <td>{{ record.intake_datetime }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
     </section>
+
+    <div v-if="confirmVisible" class="modal-backdrop">
+      <div class="confirm-modal">
+        <div class="result-header">
+          <h2>确认录入数据</h2>
+          <span class="pill">{{ lastBatch?.status }}</span>
+        </div>
+        <div class="form-grid">
+          <label>
+            <span>菜品名称</span>
+            <input v-model="confirmRecord.product_name" placeholder="请输入菜品名称" />
+          </label>
+          <label>
+            <span>重量</span>
+            <input v-model="confirmRecord.weight" type="number" step="0.01" placeholder="请输入重量" />
+          </label>
+          <label>
+            <span>单位</span>
+            <input v-model="confirmRecord.unit" />
+          </label>
+          <label>
+            <span>记录人</span>
+            <input v-model="confirmRecord.recorder" />
+          </label>
+          <label>
+            <span>入库时间</span>
+            <input v-model="confirmRecord.intake_datetime" type="datetime-local" />
+          </label>
+          <label>
+            <span>备注</span>
+            <input v-model="confirmRecord.notes" placeholder="可选" />
+          </label>
+        </div>
+        <pre class="raw-preview">{{ detectionPreview }}</pre>
+        <div class="modal-actions">
+          <button class="secondary" @click="confirmVisible = false">取消</button>
+          <button class="primary" @click="saveConfirmedRecord">确认录入 SQLite</button>
+        </div>
+      </div>
+    </div>
   </main>
 </template>
 
@@ -50,15 +161,21 @@ const sourceOptionsById = reactive({})
 const sourceLoadingById = reactive({})
 const capturing = ref(false)
 const lastBatch = ref(null)
+const detectionModels = ref([{ id: 'yolov11', name: 'YOLOv11' }])
+const ocrModels = ref([{ id: 'paddleocr', name: 'PaddleOCR' }])
+const selectedDetectionModel = ref('yolov11')
+const selectedOcrModel = ref('paddleocr')
+const confirmVisible = ref(false)
+const confirmRecord = reactive({})
+const localRecords = ref([])
+const localMessage = ref('本地数据库暂无待上传数据')
+const mysqlRecords = ref([])
+const mysqlMessage = ref('')
+const mysqlDate = ref(new Date().toISOString().slice(0, 10))
 let pollTimer = null
 let batchTimer = null
 
-const formattedBatch = computed(() => {
-  if (!lastBatch.value) {
-    return '点击“开始录入”后，将同时抓取左右两路最新画面，并提交给 YOLO/OCR 接口。'
-  }
-  return JSON.stringify(lastBatch.value, null, 2)
-})
+const detectionPreview = computed(() => JSON.stringify(lastBatch.value?.result || {}, null, 2))
 
 async function refreshStatus() {
   try {
@@ -89,6 +206,8 @@ async function startCapture() {
       body: JSON.stringify({
         trigger_type: 'manual',
         recorder: 'web',
+        detection_model: selectedDetectionModel.value,
+        ocr_model: selectedOcrModel.value,
       }),
     })
     const payload = await response.json()
@@ -97,6 +216,13 @@ async function startCapture() {
   } finally {
     capturing.value = false
   }
+}
+
+async function loadModels() {
+  const response = await fetch(`${apiBase}/api/models`, { cache: 'no-store' })
+  const payload = await response.json()
+  detectionModels.value = payload.detection_models || detectionModels.value
+  ocrModels.value = payload.ocr_models || ocrModels.value
 }
 
 async function loadVideoSources(cameraId) {
@@ -146,14 +272,85 @@ function watchBatch(batchId) {
     const response = await fetch(`${apiBase}/api/capture/${batchId}`, { cache: 'no-store' })
     const payload = await response.json()
     lastBatch.value = payload.batch
-    if (['completed', 'failed'].includes(payload.batch.status)) {
+    if (payload.batch.status === 'completed') {
+      prepareConfirmation(payload.batch)
+      clearInterval(batchTimer)
+      batchTimer = null
+    } else if (payload.batch.status === 'failed') {
       clearInterval(batchTimer)
       batchTimer = null
     }
   }, 800)
 }
 
+function prepareConfirmation(batch) {
+  const suggested = batch.result?.suggested_record || {}
+  Object.assign(confirmRecord, {
+    batch_id: batch.batch_id,
+    product_name: suggested.product_name || '',
+    weight: suggested.weight ?? '',
+    unit: suggested.unit || 'kg',
+    recorder: batch.recorder || 'web',
+    intake_datetime: formatDateTimeInput(new Date()),
+    notes: suggested.notes || '',
+    detection_model: batch.detection_model || selectedDetectionModel.value,
+    ocr_model: batch.ocr_model || selectedOcrModel.value,
+    trigger_type: batch.trigger_type || 'manual',
+    frames: batch.frames || {},
+    raw_result: batch.result || {},
+  })
+  confirmVisible.value = true
+}
+
+async function saveConfirmedRecord() {
+  const response = await fetch(`${apiBase}/api/records/local`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(confirmRecord),
+  })
+  if (!response.ok) {
+    window.alert('保存 SQLite 失败')
+    return
+  }
+  confirmVisible.value = false
+  await loadLocalRecords()
+}
+
+async function loadLocalRecords() {
+  const response = await fetch(`${apiBase}/api/records/local/session`, { cache: 'no-store' })
+  const payload = await response.json()
+  localRecords.value = payload.records || []
+  localMessage.value = payload.message || ''
+}
+
+async function uploadLocalRecords() {
+  const response = await fetch(`${apiBase}/api/records/upload-mysql`, { method: 'POST' })
+  const payload = await response.json()
+  if (!response.ok) {
+    window.alert(payload.error || 'MySQL 入库失败')
+    return
+  }
+  localMessage.value = payload.message
+  await loadLocalRecords()
+  await loadMysqlRecords()
+}
+
+async function loadMysqlRecords() {
+  const response = await fetch(`${apiBase}/api/records/mysql?date=${mysqlDate.value}`, { cache: 'no-store' })
+  const payload = await response.json()
+  mysqlRecords.value = payload.records || []
+  mysqlMessage.value = payload.message || (mysqlRecords.value.length ? '' : '所选日期暂无 MySQL 数据')
+}
+
+function formatDateTimeInput(date) {
+  const offset = date.getTimezoneOffset()
+  return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 16)
+}
+
 onMounted(() => {
+  loadModels()
+  loadLocalRecords()
+  loadMysqlRecords()
   refreshStatus()
   pollTimer = setInterval(refreshStatus, 2000)
 })

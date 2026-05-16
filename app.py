@@ -13,7 +13,7 @@ from flask_cors import CORS
 from api import frame_api
 from camera.manager import CameraManager
 from config_loader import load_camera_configs
-from services import CaptureService, DetectionService
+from services import CaptureService, DatabaseService, DetectionService
 
 
 def create_app() -> Flask:
@@ -27,14 +27,18 @@ def create_app() -> Flask:
 
     config_path = os.getenv("CAMERA_CONFIG", "config/camera.yaml")
     camera_manager = CameraManager.from_configs(load_camera_configs(config_path))
+    detection_service = DetectionService()
     capture_service = CaptureService(
         camera_manager=camera_manager,
-        detection_service=DetectionService(),
+        detection_service=detection_service,
         storage_dir=os.getenv("CAPTURE_STORAGE_DIR", "data/captures"),
     )
+    database_service = DatabaseService(os.getenv("SQLITE_DB_PATH", "data/intake_records.sqlite3"))
 
     app.config["camera_manager"] = camera_manager
     app.config["capture_service"] = capture_service
+    app.config["detection_service"] = detection_service
+    app.config["database_service"] = database_service
     app.register_blueprint(frame_api)
 
     camera_manager.start_all()

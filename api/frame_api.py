@@ -21,9 +21,22 @@ def _capture_service():
     return current_app.config["capture_service"]
 
 
+def _detection_service():
+    return current_app.config["detection_service"]
+
+
+def _database_service():
+    return current_app.config["database_service"]
+
+
 @frame_api.get("/health")
 def health() -> Response:
     return jsonify({"status": "ok"})
+
+
+@frame_api.get("/models")
+def models() -> Response:
+    return jsonify(_detection_service().available_models())
 
 
 @frame_api.get("/cameras/status")
@@ -99,9 +112,13 @@ def start_capture() -> Response:
     payload = request.get_json(silent=True) or {}
     recorder = str(payload.get("recorder") or "anonymous")
     trigger_type = str(payload.get("trigger_type") or "manual")
+    detection_model = str(payload.get("detection_model") or "yolov11")
+    ocr_model = str(payload.get("ocr_model") or "paddleocr")
     batch = _capture_service().submit_capture(
         trigger_type=trigger_type,
         recorder=recorder,
+        detection_model=detection_model,
+        ocr_model=ocr_model,
     )
     return jsonify({"batch": asdict(batch)}), 202
 
@@ -119,6 +136,36 @@ def list_captures() -> Response:
     batches = _capture_service().list_batches()
     batches.sort(key=lambda item: item.created_at, reverse=True)
     return jsonify({"batches": [asdict(batch) for batch in batches]})
+
+
+@frame_api.post("/records/local")
+def create_local_record() -> Response:
+    payload = request.get_json(silent=True) or {}
+    record = _database_service().insert_local_record(payload)
+    return jsonify({"record": record}), 201
+
+
+@frame_api.get("/records/local/session")
+def local_session_records() -> Response:
+    pending_only = request.args.get("pending_only", "1") != "0"
+    records = _database_service().list_session_records(pending_only=pending_only)
+    message = "" if records else "数据已入库，本地数据库暂无待上传数据"
+    return jsonify({"records": records, "message": message})
+
+
+@frame_api.post("/records/upload-mysql")
+def upload_mysql_records() -> Response:
+    try:
+        result = _database_service().upload_session_pending_to_mysql()
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(result)
+
+
+@frame_api.get("/records/mysql")
+def mysql_records() -> Response:
+    intake_date = request.args.get("date") or time.strftime("%Y-%m-%d")
+    return jsonify(_database_service().list_mysql_records(intake_date))
 
 
 def _mjpeg_frames(camera_manager, camera_id: str) -> Iterator[bytes]:

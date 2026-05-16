@@ -1,6 +1,6 @@
 # Canteen Management System
 
-食堂食材进货自动录入系统的第一阶段实现：跨 Windows / Linux / Jetson 的双路视频采集、实时预览、状态监控和“开始录入”批次抓拍接口。
+食堂食材进货自动录入系统：跨 Windows / Linux / Jetson 的双路视频采集、实时预览、YOLO/OCR 检测确认、本地 SQLite 暂存和 MySQL 入库。
 
 ## 当前能力
 
@@ -16,14 +16,18 @@
 - 每路摄像头独立采集线程，只保留最新帧，不堆积队列。
 - 任意一路摄像头异常时仅该路标记离线并自动重连，Flask 主进程和另一路视频不退出。
 - Flask API 提供：
+  - `GET /api/models`
   - `GET /api/cameras/status`
   - `GET /api/cameras/<camera_id>/stream`
-- `GET /api/video-sources?camera_id=entrance`
-- `POST /api/cameras/<camera_id>/source`
+  - `GET /api/video-sources?camera_id=entrance`
+  - `POST /api/cameras/<camera_id>/source`
   - `POST /api/capture/start`
   - `GET /api/capture/<batch_id>`
+  - `POST /api/records/local`
+  - `POST /api/records/upload-mysql`
+  - `GET /api/records/mysql?date=YYYY-MM-DD`
 - Vue 前端固定显示左右两块黑色视频区域，离线时居中显示“视频流读取异常请检查”，并用红绿小点显示在线/离线和视频来源。
-- “开始录入”会同时抓取左右两路最新画面，写入 `data/captures/<batch_id>/`，再交给后台检测调度线程调用 YOLO/OCR 服务占位接口。
+- “开始录入”会同时抓取左右两路最新画面，写入 `data/captures/<batch_id>/`，再交给后台检测调度线程调用 YOLO/OCR，弹窗确认后写入 SQLite，最后可批量上传 MySQL。
 
 ## 项目结构
 
@@ -49,6 +53,7 @@
 │   └── src/
 ├── services/
 │   ├── capture_service.py
+│   ├── database_service.py
 │   └── detection_service.py
 └── tests/
 ```
@@ -195,14 +200,42 @@ Linux USB 摄像头：
   source: /dev/video0
 ```
 
-## 后续接入 YOLO/OCR
+## 检测、OCR、确认和入库流程
 
-`services/detection_service.py` 中预留了模型接口：
+页面顶部提供两个模型下拉框：
 
-- `detect_products(image_paths)`
-- `recognize_weight(image_path)`
+- 目标检测模型：`YOLOv11`
+- OCR 模型：`PaddleOCR`
 
-当前返回 `model_not_configured` / `ocr_not_configured`，后续可在这里加载 YOLO、TensorRT/ONNX Runtime 或 OCR 模型。`POST /api/capture/start` 的返回批次会在后台线程完成后更新为：
+点击 `开始录入` 后：
+
+1. 同时抓取进货区和秤面两路最新帧。
+2. 后台线程调用目标检测和 OCR 服务。
+3. 前端弹出确认框，展示建议的 `菜品名称`、`重量`、`单位`、`记录人`、`入库时间` 等字段。
+4. 录入人员可直接修改字段。
+5. 点击 `确认录入 SQLite` 后写入本机 SQLite。
+6. 视频下方左侧展示本次系统启动后已确认、尚未上传 MySQL 的 SQLite 记录。
+7. 点击 `数据入库` 后，本次待上传记录写入 MySQL，并将左侧区域清空，显示 `数据已入库，本地数据库暂无待上传数据`。
+8. 视频下方右侧展示 MySQL 中指定日期的数据，可通过日期选择器切换，只查询一天的数据。
+
+`services/detection_service.py` 中的模型接口：
+
+- `detect_products(image_paths, model_id="yolov11")`
+- `recognize_weight(image_path, model_id="paddleocr")`
+
+如果未安装模型依赖或未配置权重，接口会返回可编辑的空建议结果，不影响抓拍、确认和入库流程。配置 YOLOv11 权重：
+
+```bash
+export YOLO_MODEL_PATH=/path/to/yolov11.pt
+```
+
+PaddleOCR 为可选依赖，安装后会自动启用：
+
+```bash
+pip install paddleocr
+```
+
+`POST /api/capture/start` 的返回批次会在后台线程完成后更新为：
 
 ```json
 {
@@ -220,4 +253,92 @@ Linux USB 摄像头：
     "scale": "data/captures/<batch_id>/scale.jpg"
   }
 }
+```
+
+## SQLite / MySQL 数据库
+
+本机 SQLite 默认路径：
+
+```bash
+data/intake_records.sqlite3
+```
+
+可通过环境变量修改：
+
+```bash
+export SQLITE_DB_PATH=data/intake_records.sqlite3
+```
+
+MySQL 连接通过环境变量配置：
+
+```bash
+export MYSQL_HOST=127.0.0.1
+export MYSQL_PORT=3306
+export MYSQL_USER=root
+export MYSQL_PASSWORD=your_password
+export MYSQL_DATABASE=canteen
+export MYSQL_CHARSET=utf8mb4
+```
+
+SQLite 和 MySQL 使用同一张业务表。MySQL 建表语句：
+
+```sql
+CREATE TABLE IF NOT EXISTS intake_records (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  batch_id VARCHAR(64),
+  product_name VARCHAR(128) NOT NULL,
+  weight DECIMAL(10, 3),
+  unit VARCHAR(16) NOT NULL DEFAULT 'kg',
+  recorder VARCHAR(64),
+  intake_datetime DATETIME NOT NULL,
+  intake_date DATE NOT NULL,
+  detection_model VARCHAR(64),
+  ocr_model VARCHAR(64),
+  trigger_type VARCHAR(32),
+  frames_json JSON,
+  raw_result_json JSON,
+  notes VARCHAR(512),
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  INDEX idx_intake_records_date (intake_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+## API 接口
+
+模型：
+
+```http
+GET /api/models
+```
+
+视频源：
+
+```http
+GET /api/cameras/status
+GET /api/cameras/<camera_id>/stream
+GET /api/video-sources?camera_id=entrance
+POST /api/cameras/<camera_id>/source
+```
+
+抓拍检测：
+
+```http
+POST /api/capture/start
+GET /api/capture/<batch_id>
+GET /api/capture
+```
+
+确认入本地库：
+
+```http
+POST /api/records/local
+GET /api/records/local/session
+```
+
+MySQL 查询和上传：
+
+```http
+POST /api/records/upload-mysql
+GET /api/records/mysql?date=2026-05-16
 ```

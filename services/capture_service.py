@@ -25,6 +25,8 @@ class CaptureBatch:
     created_at: float
     trigger_type: str
     recorder: str
+    detection_model: str
+    ocr_model: str
     status: str
     frames: dict[str, Optional[str]]
     result: Optional[dict[str, Any]] = None
@@ -74,6 +76,8 @@ class CaptureService:
         self,
         trigger_type: str = "manual",
         recorder: str = "anonymous",
+        detection_model: str = "yolov11",
+        ocr_model: str = "paddleocr",
     ) -> CaptureBatch:
         batch_id = uuid.uuid4().hex
         batch_dir = self._storage_dir / batch_id
@@ -90,6 +94,8 @@ class CaptureService:
             created_at=time.time(),
             trigger_type=trigger_type,
             recorder=recorder,
+            detection_model=detection_model,
+            ocr_model=ocr_model,
             status="queued",
             frames=frames,
         )
@@ -144,10 +150,16 @@ class CaptureService:
             "time": batch.created_at,
             "recorder": batch.recorder,
             "trigger_type": batch.trigger_type,
-            "products": self._detection_service.detect_products(product_images),
-            "weight": self._detection_service.recognize_weight(scale_path),
+            "detection_model": batch.detection_model,
+            "ocr_model": batch.ocr_model,
+            "products": self._detection_service.detect_products(product_images, batch.detection_model),
+            "weight": self._detection_service.recognize_weight(scale_path, batch.ocr_model),
             "frames": batch.frames,
         }
+        result["suggested_record"] = self._detection_service.build_suggested_record(
+            products=result["products"],
+            weight=result["weight"],
+        )
 
         result_path = self._storage_dir / batch.batch_id / "result.json"
         result_path.write_text(
