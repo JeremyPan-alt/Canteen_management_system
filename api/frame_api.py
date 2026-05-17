@@ -173,6 +173,16 @@ def mysql_records() -> Response:
     return jsonify(_database_service().list_mysql_records(intake_date))
 
 
+@frame_api.put("/records/mysql/<int:record_id>")
+def update_mysql_record(record_id: int) -> Response:
+    payload = request.get_json(silent=True) or {}
+    try:
+        record = _database_service().update_mysql_record(record_id, payload)
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"record": record})
+
+
 def _mjpeg_frames(camera_manager, camera_id: str) -> Iterator[bytes]:
     last_timestamp = 0.0
     while True:

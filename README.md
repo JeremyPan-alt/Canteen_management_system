@@ -27,6 +27,7 @@
   - `DELETE /api/records/local/cache`
   - `POST /api/records/upload-mysql`
   - `GET /api/records/mysql?date=YYYY-MM-DD`
+  - `PUT /api/records/mysql/<record_id>`
 - Vue 前端固定显示左右两块黑色视频区域，离线时居中显示“视频流读取异常请检查”，并用红绿小点显示在线/离线和视频来源。
 - “开始录入”会同时抓取左右两路最新画面，写入 `data/captures/<batch_id>/`，再交给后台检测调度线程调用 YOLO/OCR，弹窗确认后写入 SQLite，最后可批量上传 MySQL。
 
@@ -220,6 +221,7 @@ Linux USB 摄像头：
 8. 点击 `数据入库` 后，本次待上传记录写入 MySQL，并将左侧区域清空，显示 `数据已入库，本地数据库暂无待上传数据`。
 9. 如需重置本机缓存，可点击 `清除数据库缓存`，确认后会删除 SQLite 中全部记录。
 10. 视频下方右侧展示 MySQL 中指定日期的数据，可通过日期选择器切换，只查询一天的数据。
+11. MySQL 数据支持直接编辑；如果修改了入库时间的日期部分，保存后该条目会从当前日期列表消失，并出现在修改后的日期查询结果中。
 
 `services/detection_service.py` 中的模型接口：
 
@@ -345,4 +347,18 @@ MySQL 查询和上传：
 ```http
 POST /api/records/upload-mysql
 GET /api/records/mysql?date=2026-05-16
+PUT /api/records/mysql/<record_id>
+```
+
+MySQL 记录修改请求示例：
+
+```json
+{
+  "product_name": "西红柿",
+  "weight": 5.2,
+  "unit": "kg",
+  "recorder": "operator",
+  "intake_datetime": "2026-05-18T10:20",
+  "notes": "人工修正"
+}
 ```

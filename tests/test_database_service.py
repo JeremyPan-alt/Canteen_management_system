@@ -52,3 +52,7 @@ def test_clear_local_cache_deletes_records_and_session_ids(tmp_path):
 
     assert result["deleted"] == 1
     assert service.list_session_records() == []
+
+
+def test_normalize_datetime_accepts_datetime_local_value():
+    assert DatabaseService._normalize_datetime("2026-05-18T10:20") == "2026-05-18 10:20:00"

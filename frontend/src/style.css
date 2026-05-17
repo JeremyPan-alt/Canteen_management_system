@@ -90,6 +90,19 @@ h1 {
   gap: 10px;
 }
 
+.link-button {
+  border: 0;
+  padding: 0;
+  color: #38bdf8;
+  background: transparent;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.link-button:hover {
+  color: #93c5fd;
+}
+
 .secondary:disabled {
   cursor: not-allowed;
   opacity: 0.5;
@@ -451,6 +464,12 @@ th {
   justify-content: flex-end;
   gap: 12px;
   margin-top: 16px;
+}
+
+.modal-hint {
+  margin-top: 14px;
+  color: #facc15;
+  line-height: 1.6;
 }
 
 pre {

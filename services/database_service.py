@@ -7,6 +7,7 @@ import os
 import sqlite3
 import threading
 import time
+from datetime import date, datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -159,7 +160,75 @@ class DatabaseService:
                     """,
                     (intake_date,),
                 )
-                return {"configured": True, "records": list(cursor.fetchall())}
+                return {"configured": True, "records": [self._serialize_mysql_row(row) for row in cursor.fetchall()]}
+        finally:
+            connection.close()
+
+    def update_mysql_record(self, record_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        mysql_config = self._mysql_config_from_env()
+        if mysql_config is None:
+            raise RuntimeError("MySQL is not configured. Set MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD and MYSQL_DATABASE.")
+
+        try:
+            import pymysql  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError("PyMySQL is not installed. Run `pip install PyMySQL`.") from exc
+
+        intake_datetime = self._normalize_datetime(payload.get("intake_datetime"))
+        intake_date = intake_datetime[:10]
+        values = {
+            "id": record_id,
+            "product_name": payload.get("product_name") or "",
+            "weight": self._float_or_none(payload.get("weight")),
+            "unit": payload.get("unit") or "kg",
+            "recorder": payload.get("recorder") or "web",
+            "intake_datetime": intake_datetime,
+            "intake_date": intake_date,
+            "notes": payload.get("notes") or "",
+            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+        connection = pymysql.connect(
+            host=mysql_config.host,
+            port=mysql_config.port,
+            user=mysql_config.user,
+            password=mysql_config.password,
+            database=mysql_config.database,
+            charset=mysql_config.charset,
+            cursorclass=pymysql.cursors.DictCursor,
+        )
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE intake_records
+                    SET product_name = %(product_name)s,
+                        weight = %(weight)s,
+                        unit = %(unit)s,
+                        recorder = %(recorder)s,
+                        intake_datetime = %(intake_datetime)s,
+                        intake_date = %(intake_date)s,
+                        notes = %(notes)s,
+                        updated_at = %(updated_at)s
+                    WHERE id = %(id)s
+                    """,
+                    values,
+                )
+                if cursor.rowcount == 0:
+                    raise RuntimeError(f"MySQL record not found: {record_id}")
+                cursor.execute(
+                    """
+                    SELECT id, batch_id, product_name, weight, unit, recorder,
+                           intake_datetime, intake_date, detection_model, ocr_model,
+                           trigger_type, notes, created_at
+                    FROM intake_records
+                    WHERE id = %s
+                    """,
+                    (record_id,),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+            return self._serialize_mysql_row(row)
         finally:
             connection.close()
 
@@ -263,3 +332,28 @@ class DatabaseService:
         if value in (None, ""):
             return None
         return float(value)
+
+    @staticmethod
+    def _normalize_datetime(value: Any) -> str:
+        if isinstance(value, datetime):
+            return value.strftime("%Y-%m-%d %H:%M:%S")
+        if value in (None, ""):
+            return time.strftime("%Y-%m-%d %H:%M:%S")
+        text = str(value).strip().replace("T", " ")
+        if len(text) == 16:
+            return f"{text}:00"
+        return text
+
+    @classmethod
+    def _serialize_mysql_row(cls, row: Optional[dict[str, Any]]) -> dict[str, Any]:
+        if not row:
+            return {}
+        result: dict[str, Any] = {}
+        for key, value in row.items():
+            if isinstance(value, datetime):
+                result[key] = value.strftime("%Y-%m-%d %H:%M:%S")
+            elif isinstance(value, date):
+                result[key] = value.isoformat()
+            else:
+                result[key] = value
+        return result

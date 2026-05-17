@@ -84,6 +84,9 @@ class FakeDatabaseService:
     def list_mysql_records(self, intake_date):
         return {"configured": True, "records": []}
 
+    def update_mysql_record(self, record_id, payload):
+        return {"id": record_id, **payload, "intake_date": str(payload.get("intake_datetime"))[:10]}
+
 
 def make_app():
     app = Flask(__name__)
@@ -92,25 +95,6 @@ def make_app():
     app.config["database_service"] = FakeDatabaseService()
     app.register_blueprint(frame_api)
     return app
-
-    def update_camera_source(self, camera_id, *, source_type, source, source_label=None):
-        self.config = CameraConfig(
-            camera_id=camera_id,
-            name="进货区实时画面",
-            source_type=source_type,
-            source=source,
-            source_label=source_label,
-        )
-        return {
-            "camera_id": camera_id,
-            "name": "进货区实时画面",
-            "source_type": source_type,
-            "source_label": self.config.display_source(),
-            "online": False,
-            "running": True,
-            "last_frame_at": None,
-            "last_error": None,
-        }
 
 
 def test_mjpeg_stream_does_not_require_app_context_during_iteration():
@@ -209,3 +193,22 @@ def test_clear_local_cache_endpoint_deletes_records():
     payload = response.get_json()
     assert response.status_code == 200
     assert payload["deleted"] == 1
+
+
+def test_update_mysql_record_endpoint_updates_record_date():
+    response = make_app().test_client().put(
+        "/api/records/mysql/7",
+        json={
+            "product_name": "西红柿",
+            "weight": 5.2,
+            "unit": "kg",
+            "recorder": "tester",
+            "intake_datetime": "2026-05-18T10:20",
+            "notes": "修正日期",
+        },
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["record"]["id"] == 7
+    assert payload["record"]["intake_date"] == "2026-05-18"

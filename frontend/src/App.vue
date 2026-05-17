@@ -105,6 +105,7 @@
                 <th>重量</th>
                 <th>记录人</th>
                 <th>入库时间</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -113,6 +114,9 @@
                 <td>{{ record.weight ?? '-' }} {{ record.unit }}</td>
                 <td>{{ record.recorder }}</td>
                 <td>{{ record.intake_datetime }}</td>
+                <td>
+                  <button class="link-button" @click="openMysqlEdit(record)">编辑</button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -159,6 +163,46 @@
         </div>
       </div>
     </div>
+
+    <div v-if="mysqlEditVisible" class="modal-backdrop">
+      <div class="confirm-modal">
+        <div class="result-header">
+          <h2>修改 MySQL 入库数据</h2>
+          <span class="pill">ID {{ mysqlEditRecord.id }}</span>
+        </div>
+        <div class="form-grid">
+          <label>
+            <span>菜品名称</span>
+            <input v-model="mysqlEditRecord.product_name" placeholder="请输入菜品名称" />
+          </label>
+          <label>
+            <span>重量</span>
+            <input v-model="mysqlEditRecord.weight" type="number" step="0.01" placeholder="请输入重量" />
+          </label>
+          <label>
+            <span>单位</span>
+            <input v-model="mysqlEditRecord.unit" />
+          </label>
+          <label>
+            <span>记录人</span>
+            <input v-model="mysqlEditRecord.recorder" />
+          </label>
+          <label>
+            <span>入库时间</span>
+            <input v-model="mysqlEditRecord.intake_datetime" type="datetime-local" />
+          </label>
+          <label>
+            <span>备注</span>
+            <input v-model="mysqlEditRecord.notes" placeholder="可选" />
+          </label>
+        </div>
+        <p class="modal-hint">如果修改了入库日期，保存后该条目会从当前日期列表中消失，并出现在新的日期查询结果中。</p>
+        <div class="modal-actions">
+          <button class="secondary" @click="mysqlEditVisible = false">取消</button>
+          <button class="primary" @click="saveMysqlRecord">保存修改</button>
+        </div>
+      </div>
+    </div>
   </main>
 </template>
 
@@ -188,6 +232,8 @@ const localMessage = ref('本地数据库暂无待上传数据')
 const mysqlRecords = ref([])
 const mysqlMessage = ref('')
 const mysqlDate = ref(new Date().toISOString().slice(0, 10))
+const mysqlEditVisible = ref(false)
+const mysqlEditRecord = reactive({})
 let pollTimer = null
 let batchTimer = null
 
@@ -375,9 +421,50 @@ async function loadMysqlRecords() {
   mysqlMessage.value = payload.message || (mysqlRecords.value.length ? '' : '所选日期暂无 MySQL 数据')
 }
 
+function openMysqlEdit(record) {
+  Object.assign(mysqlEditRecord, {
+    id: record.id,
+    product_name: record.product_name || '',
+    weight: record.weight ?? '',
+    unit: record.unit || 'kg',
+    recorder: record.recorder || '',
+    intake_datetime: toDateTimeInput(record.intake_datetime),
+    notes: record.notes || '',
+  })
+  mysqlEditVisible.value = true
+}
+
+async function saveMysqlRecord() {
+  const response = await fetch(`${apiBase}/api/records/mysql/${mysqlEditRecord.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(mysqlEditRecord),
+  })
+  const payload = await response.json()
+  if (!response.ok) {
+    window.alert(payload.error || '修改 MySQL 数据失败')
+    return
+  }
+  mysqlEditVisible.value = false
+  await loadMysqlRecords()
+}
+
 function formatDateTimeInput(date) {
   const offset = date.getTimezoneOffset()
   return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 16)
+}
+
+function toDateTimeInput(value) {
+  if (!value) return formatDateTimeInput(new Date())
+  if (typeof value === 'string') {
+    const normalized = value.replace('T', ' ')
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(normalized)) {
+      return normalized.slice(0, 16).replace(' ', 'T')
+    }
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return formatDateTimeInput(new Date())
+  return formatDateTimeInput(date)
 }
 
 onMounted(() => {
