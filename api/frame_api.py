@@ -153,6 +153,11 @@ def local_session_records() -> Response:
     return jsonify({"records": records, "message": message})
 
 
+@frame_api.delete("/records/local/cache")
+def clear_local_cache() -> Response:
+    return jsonify(_database_service().clear_local_cache())
+
+
 @frame_api.post("/records/upload-mysql")
 def upload_mysql_records() -> Response:
     try:

@@ -24,6 +24,7 @@
   - `POST /api/capture/start`
   - `GET /api/capture/<batch_id>`
   - `POST /api/records/local`
+  - `DELETE /api/records/local/cache`
   - `POST /api/records/upload-mysql`
   - `GET /api/records/mysql?date=YYYY-MM-DD`
 - Vue 前端固定显示左右两块黑色视频区域，离线时居中显示“视频流读取异常请检查”，并用红绿小点显示在线/离线和视频来源。
@@ -211,12 +212,14 @@ Linux USB 摄像头：
 
 1. 同时抓取进货区和秤面两路最新帧。
 2. 后台线程调用目标检测和 OCR 服务。
-3. 前端弹出确认框，展示建议的 `菜品名称`、`重量`、`单位`、`记录人`、`入库时间` 等字段。
-4. 录入人员可直接修改字段。
-5. 点击 `确认录入 SQLite` 后写入本机 SQLite。
-6. 视频下方左侧展示本次系统启动后已确认、尚未上传 MySQL 的 SQLite 记录。
-7. 点击 `数据入库` 后，本次待上传记录写入 MySQL，并将左侧区域清空，显示 `数据已入库，本地数据库暂无待上传数据`。
-8. 视频下方右侧展示 MySQL 中指定日期的数据，可通过日期选择器切换，只查询一天的数据。
+3. 前端显示检测进度，包括 CUDA/CPU 信息、模型加载、目标检测、OCR 等阶段日志。
+4. 前端弹出确认框，展示建议的 `菜品名称`、`重量`、`单位`、`记录人`、`入库时间` 等字段。
+5. 录入人员可直接修改字段。
+6. 点击 `确认录入 SQLite` 后写入本机 SQLite。
+7. 视频下方左侧展示本次系统启动后已确认、尚未上传 MySQL 的 SQLite 记录。
+8. 点击 `数据入库` 后，本次待上传记录写入 MySQL，并将左侧区域清空，显示 `数据已入库，本地数据库暂无待上传数据`。
+9. 如需重置本机缓存，可点击 `清除数据库缓存`，确认后会删除 SQLite 中全部记录。
+10. 视频下方右侧展示 MySQL 中指定日期的数据，可通过日期选择器切换，只查询一天的数据。
 
 `services/detection_service.py` 中的模型接口：
 
@@ -334,6 +337,7 @@ GET /api/capture
 ```http
 POST /api/records/local
 GET /api/records/local/session
+DELETE /api/records/local/cache
 ```
 
 MySQL 查询和上传：

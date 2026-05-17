@@ -93,6 +93,15 @@ class DatabaseService:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_dict(row) for row in rows]
 
+    def clear_local_cache(self) -> dict[str, Any]:
+        with self._connect() as conn:
+            deleted = conn.execute("DELETE FROM intake_records").rowcount
+            conn.execute("DELETE FROM sqlite_sequence WHERE name = 'intake_records'")
+            conn.commit()
+        with self._lock:
+            self._session_record_ids.clear()
+        return {"deleted": int(deleted or 0), "message": "本地数据库缓存已清除"}
+
     def upload_session_pending_to_mysql(self) -> dict[str, Any]:
         records = self.list_session_records(pending_only=True)
         if not records:

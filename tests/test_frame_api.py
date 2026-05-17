@@ -76,6 +76,11 @@ class FakeDatabaseService:
         self.records = []
         return {"uploaded": 1, "message": "数据已入库，本地数据库暂无待上传数据"}
 
+    def clear_local_cache(self):
+        deleted = len(self.records)
+        self.records = []
+        return {"deleted": deleted, "message": "本地数据库缓存已清除"}
+
     def list_mysql_records(self, intake_date):
         return {"configured": True, "records": []}
 
@@ -192,3 +197,15 @@ def test_local_record_endpoint_saves_confirmed_record():
     payload = response.get_json()
     assert response.status_code == 201
     assert payload["record"]["product_name"] == "土豆"
+
+
+def test_clear_local_cache_endpoint_deletes_records():
+    app = make_app()
+    client = app.test_client()
+    client.post("/api/records/local", json={"product_name": "土豆", "weight": 2.5})
+
+    response = client.delete("/api/records/local/cache")
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["deleted"] == 1

@@ -31,6 +31,7 @@ class CaptureBatch:
     frames: dict[str, Optional[str]]
     result: Optional[dict[str, Any]] = None
     error: Optional[str] = None
+    progress_logs: list[dict[str, Any]] = field(default_factory=list)
     updated_at: float = field(default_factory=time.time)
 
 
@@ -101,6 +102,7 @@ class CaptureService:
         )
         with self._lock:
             self._batches[batch_id] = batch
+        self._append_progress(batch_id, "已抓取当前左右两路画面，检测任务已进入队列")
 
         try:
             self._jobs.put_nowait(CaptureJob(batch_id=batch_id))
@@ -140,10 +142,14 @@ class CaptureService:
         if not batch:
             return
         self._update_batch(job.batch_id, status="processing")
+        self._append_progress(job.batch_id, "检测调度线程已开始处理")
 
         entrance_path = self._path_or_none(batch.frames.get("entrance"))
         scale_path = self._path_or_none(batch.frames.get("scale"))
         product_images = [path for path in [entrance_path] if path is not None]
+        for message in self._detection_service.runtime_diagnostics():
+            self._append_progress(job.batch_id, message)
+        self._append_progress(job.batch_id, f"进货区图片数量：{len(product_images)}，秤面图片：{'已获取' if scale_path else '未获取'}")
 
         result = {
             "batch_id": batch.batch_id,
@@ -152,10 +158,19 @@ class CaptureService:
             "trigger_type": batch.trigger_type,
             "detection_model": batch.detection_model,
             "ocr_model": batch.ocr_model,
-            "products": self._detection_service.detect_products(product_images, batch.detection_model),
-            "weight": self._detection_service.recognize_weight(scale_path, batch.ocr_model),
+            "products": self._detection_service.detect_products(
+                product_images,
+                batch.detection_model,
+                progress=lambda message: self._append_progress(job.batch_id, message),
+            ),
+            "weight": self._detection_service.recognize_weight(
+                scale_path,
+                batch.ocr_model,
+                progress=lambda message: self._append_progress(job.batch_id, message),
+            ),
             "frames": batch.frames,
         }
+        self._append_progress(job.batch_id, "检测和 OCR 处理完成，正在生成待确认结果")
         result["suggested_record"] = self._detection_service.build_suggested_record(
             products=result["products"],
             weight=result["weight"],
@@ -167,6 +182,7 @@ class CaptureService:
             encoding="utf-8",
         )
         result["result_path"] = str(result_path)
+        self._append_progress(job.batch_id, "结果文件已保存，等待录入人员确认")
         self._update_batch(job.batch_id, status="completed", result=result, error=None)
 
     def _write_snapshot(
@@ -201,3 +217,16 @@ class CaptureService:
             if result is not None:
                 batch.result = result
             batch.error = error
+
+    def _append_progress(self, batch_id: str, message: str) -> None:
+        with self._lock:
+            batch = self._batches.get(batch_id)
+            if not batch:
+                return
+            batch.progress_logs.append(
+                {
+                    "time": time.strftime("%H:%M:%S"),
+                    "message": message,
+                }
+            )
+            batch.updated_at = time.time()

@@ -44,13 +44,29 @@
       />
     </section>
 
+    <section v-if="lastBatch?.progress_logs?.length" class="progress-card">
+      <div class="result-header">
+        <h2>检测进度</h2>
+        <span class="pill">{{ lastBatch.status }}</span>
+      </div>
+      <ul class="progress-list">
+        <li v-for="(log, index) in lastBatch.progress_logs" :key="`${log.time}-${index}`">
+          <span>{{ log.time }}</span>
+          <p>{{ log.message }}</p>
+        </li>
+      </ul>
+    </section>
+
     <section class="data-grid">
       <article class="result-card">
         <div class="result-header">
           <h2>本次待上传 SQLite 数据</h2>
-          <button class="secondary" :disabled="!localRecords.length" @click="uploadLocalRecords">
-            数据入库
-          </button>
+          <div class="button-row">
+            <button class="danger" @click="clearLocalCache">清除数据库缓存</button>
+            <button class="secondary" :disabled="!localRecords.length" @click="uploadLocalRecords">
+              数据入库
+            </button>
+          </div>
         </div>
         <p v-if="localMessage && !localRecords.length" class="empty-text">{{ localMessage }}</p>
         <div v-else class="table-wrap">
@@ -213,7 +229,8 @@ async function startCapture() {
     const payload = await response.json()
     lastBatch.value = payload.batch
     watchBatch(payload.batch.batch_id)
-  } finally {
+  } catch (error) {
+    window.alert(`启动检测失败：${error}`)
     capturing.value = false
   }
 }
@@ -276,9 +293,12 @@ function watchBatch(batchId) {
       prepareConfirmation(payload.batch)
       clearInterval(batchTimer)
       batchTimer = null
+      capturing.value = false
     } else if (payload.batch.status === 'failed') {
+      window.alert(payload.batch.error || '检测失败')
       clearInterval(batchTimer)
       batchTimer = null
+      capturing.value = false
     }
   }, 800)
 }
@@ -333,6 +353,19 @@ async function uploadLocalRecords() {
   localMessage.value = payload.message
   await loadLocalRecords()
   await loadMysqlRecords()
+}
+
+async function clearLocalCache() {
+  const confirmed = window.confirm('确认清除本地数据库缓存吗？该操作会直接删除 SQLite 中所有内容，且不可恢复。')
+  if (!confirmed) return
+  const response = await fetch(`${apiBase}/api/records/local/cache`, { method: 'DELETE' })
+  const payload = await response.json()
+  if (!response.ok) {
+    window.alert(payload.error || '清除本地数据库缓存失败')
+    return
+  }
+  localMessage.value = payload.message
+  await loadLocalRecords()
 }
 
 async function loadMysqlRecords() {
